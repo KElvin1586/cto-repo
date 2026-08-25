@@ -4,6 +4,7 @@ import { generateBatchZip, parseCsv, rowsToItems } from "../qr/batch";
 import { useSeo } from "../hooks";
 import { DEFAULT_OPTIONS, type QrOptions, type QrType } from "../types";
 import { Pill } from "../components/Fields";
+import { PremiumGate } from "../components/PremiumGate";
 
 const SAMPLE = `label,url
 Homepage,https://example.com
@@ -13,8 +14,16 @@ Support,https://example.com/support`;
 export function BatchPage() {
   useSeo(
     "Batch QR Code Generator (CSV → ZIP) — QR Studio",
-    "Generate hundreds of QR codes at once from a CSV file and download them all as a ZIP. Private, free and offline.",
+    "Generate hundreds of QR codes at once from a CSV file and download them all as a ZIP. A Premium feature.",
   );
+  return (
+    <PremiumGate feature="batch" title="Batch QR generation">
+      <BatchInner />
+    </PremiumGate>
+  );
+}
+
+function BatchInner() {
   const [type, setType] = useState<QrType>("url");
   const [csv, setCsv] = useState<string>(SAMPLE);
   const [size, setSize] = useState(512);

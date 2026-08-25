@@ -2,8 +2,8 @@
   "name": "qr-studio",
   "private": true,
   "type": "module",
-  "version": "1.0.0",
-  "description": "QR Studio — a private, offline-first QR code generator. URL, Text, Email, Phone, SMS, Wi-Fi, VCard, Location, Event and WhatsApp codes with full customization and batch generation. Everything runs locally in your browser.",
+  "version": "1.1.0",
+  "description": "QR Studio — a private, offline-first QR code generator with a functional Free/Premium plan. URL and Text codes free; all 10 types, logos, advanced styles, SVG/PDF export, history, templates and batch generation in Premium. Everything runs locally in your browser.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

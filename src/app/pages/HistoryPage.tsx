@@ -4,6 +4,7 @@ import { useSeo } from "../hooks";
 import { useQrRender } from "../hooks";
 import { clearHistory, deleteHistory, getHistory } from "../store";
 import { TYPE_META } from "../components/Generator";
+import { PremiumGate } from "../components/PremiumGate";
 import type { HistoryEntry } from "../types";
 
 function MiniQr({ content, options }: { content: string; options: HistoryEntry["options"] }) {
@@ -21,8 +22,16 @@ function MiniQr({ content, options }: { content: string; options: HistoryEntry["
 export function HistoryPage() {
   useSeo(
     "History — QR Studio",
-    "Your recent QR codes, stored privately in your browser (IndexedDB).",
+    "Your recent QR codes, stored privately in your browser (IndexedDB). A Premium feature.",
   );
+  return (
+    <PremiumGate feature="history" title="QR history">
+      <HistoryInner />
+    </PremiumGate>
+  );
+}
+
+function HistoryInner() {
   const [items, setItems] = useState<HistoryEntry[]>([]);
 
   const refresh = async () => setItems(await getHistory());

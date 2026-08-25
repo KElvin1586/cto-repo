@@ -4,6 +4,7 @@ import { useSeo } from "../hooks";
 import { useQrRender } from "../hooks";
 import { deleteTemplate, getTemplates } from "../store";
 import { DEFAULT_OPTIONS, type Template } from "../types";
+import { PremiumGate } from "../components/PremiumGate";
 
 function MiniDesign({ options }: { options: Template["options"] }) {
   const { canvasRef } = useQrRender("https://example.com", { ...options, size: 160 });
@@ -20,8 +21,16 @@ function MiniDesign({ options }: { options: Template["options"] }) {
 export function TemplatesPage() {
   useSeo(
     "Templates — QR Studio",
-    "Save and reuse QR code design presets for fast, consistent branding. Stored locally in your browser.",
+    "Save and reuse QR code design presets for fast, consistent branding. A Premium feature.",
   );
+  return (
+    <PremiumGate feature="templates" title="Saved templates">
+      <TemplatesInner />
+    </PremiumGate>
+  );
+}
+
+function TemplatesInner() {
   const [list, setList] = useState<Template[]>(() => getTemplates());
   const [applied, setApplied] = useState<string | null>(null);
 

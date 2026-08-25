@@ -1,28 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QR_TYPES, getSchema } from "~/app/qr/payloads";
-import {
-  exportJpg,
-  exportPdf,
-  exportPng,
-  exportSvg,
-} from "~/app/qr/export";
+import { exportJpg, exportPdf, exportPng, exportSvg } from "~/app/qr/export";
 import { buildMatrix, renderToSvg } from "~/app/qr/render";
 import { useLocalStorage, useQrRender, readFileAsDataUrl } from "~/app/hooks";
 import { addHistory, saveTemplate } from "~/app/store";
 import { DEFAULT_OPTIONS, type QrOptions, type QrType } from "~/app/types";
 import { FieldGroup, Pill, useFieldDefaults } from "./Fields";
+import { UpgradeModal, PremiumBadge } from "./UpgradeModal";
+import {
+  useFeatureAccess,
+  qrTypeFeature,
+  hasFeature,
+  FEATURES,
+} from "~/app/entitlements";
+import type { FeatureId } from "~/app/entitlements";
 
-const TYPE_META: Record<QrType, { icon: string; label: string }> = {
-  url: { icon: "🔗", label: "URL" },
-  text: { icon: "📝", label: "Text" },
-  email: { icon: "✉️", label: "Email" },
-  phone: { icon: "📞", label: "Phone" },
-  sms: { icon: "💬", label: "SMS" },
-  wifi: { icon: "📶", label: "Wi-Fi" },
-  vcard: { icon: "👤", label: "VCard" },
-  location: { icon: "📍", label: "Location" },
-  event: { icon: "📅", label: "Event" },
-  whatsapp: { icon: "🟢", label: "WhatsApp" },
+// Free tier configuration — premium unlocks more.
+const FREE_STYLES: QrOptions["style"][] = ["square"];
+const PREMIUM_STYLES: QrOptions["style"][] = ["square", "rounded", "dots", "classy"];
+const FREE_MAX_SIZE = 1024;
+
+const TYPE_META: Record<QrType, { icon: string; label: string; feature: FeatureId }> = {
+  url: { icon: "🔗", label: "URL", feature: "qr-url" },
+  text: { icon: "📝", label: "Text", feature: "qr-text" },
+  email: { icon: "✉️", label: "Email", feature: "qr-email" },
+  phone: { icon: "📞", label: "Phone", feature: "qr-phone" },
+  sms: { icon: "💬", label: "SMS", feature: "qr-sms" },
+  wifi: { icon: "📶", label: "Wi-Fi", feature: "qr-wifi" },
+  vcard: { icon: "👤", label: "VCard", feature: "qr-vcard" },
+  location: { icon: "📍", label: "Location", feature: "qr-location" },
+  event: { icon: "📅", label: "Event", feature: "qr-event" },
+  whatsapp: { icon: "🟢", label: "WhatsApp", feature: "qr-whatsapp" },
 };
 
 const STYLE_LABELS: Record<QrOptions["style"], string> = {
@@ -32,11 +40,16 @@ const STYLE_LABELS: Record<QrOptions["style"], string> = {
   classy: "Classy",
 };
 
+const AVAILABLE_STYLES = (premium: boolean): QrOptions["style"][] =>
+  premium ? PREMIUM_STYLES : FREE_STYLES;
+
 export function Generator({ type, onChangeType }: { type: QrType; onChangeType: (t: QrType) => void }) {
+  const { plan, premium, can } = useFeatureAccess();
   const [options, setOptions] = useLocalStorage<QrOptions>("qr-studio:options", DEFAULT_OPTIONS);
   const defaults = useFieldDefaults(type);
   const [values, setValues] = useState<Record<string, string>>(defaults);
   const [toast, setToast] = useState<string | null>(null);
+  const [locked, setLocked] = useState<FeatureId | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => setValues(defaults), [defaults]);
@@ -45,7 +58,14 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
   const content = useMemo(() => schema.build(values), [schema, values]);
   const label = useMemo(() => schema.summarize(values) || "qr-code", [schema, values]);
 
-  const { canvasRef } = useQrRender(content || " ", options);
+  const maxSize = premium ? 2048 : FREE_MAX_SIZE;
+  // Effective options enforce the tier for rendering/export (no logic bypass).
+  const effectiveOptions: QrOptions = useMemo(() => {
+    const style = premium ? options.style : "square";
+    return { ...options, style, size: Math.min(options.size, maxSize) };
+  }, [options, premium, maxSize]);
+
+  const { canvasRef } = useQrRender(content || " ", effectiveOptions);
 
   const setValue = useCallback((name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -64,7 +84,21 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
     timer.current = window.setTimeout(() => setToast(null), 2400);
   };
 
+  const requestFeature = (feature: FeatureId) => {
+    if (can(feature)) return true;
+    setLocked(feature);
+    return false;
+  };
+  const closeModal = () => setLocked(null);
+
+  const selectType = (t: QrType) => {
+    const f = qrTypeFeature(t);
+    if (!requestFeature(f)) return;
+    onChangeType(t);
+  };
+
   const onLogo = async (file?: File) => {
+    if (!requestFeature("logo")) return;
     if (!file) {
       setOpt("logo", undefined);
       return;
@@ -77,36 +111,49 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
     (format: "png" | "jpg" | "svg" | "pdf") => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+      if (format === "svg" && !requestFeature("export-svg")) return;
+      if (format === "pdf" && !requestFeature("export-pdf")) return;
       const safe = label.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "qr-code";
       if (format === "png") exportPng(canvas, safe);
       else if (format === "jpg") exportJpg(canvas, safe);
       else if (format === "svg") {
-        const matrix = buildMatrix(content || " ", options.ecc, options.margin);
-        exportSvg(renderToSvg(matrix, options), safe);
+        const matrix = buildMatrix(content || " ", effectiveOptions.ecc, effectiveOptions.margin);
+        exportSvg(renderToSvg(matrix, effectiveOptions), safe);
       } else exportPdf(canvas, safe);
       notify(`Downloaded ${format.toUpperCase()}`);
     },
-    [canvasRef, label, options, content],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canvasRef, label, content, effectiveOptions],
   );
 
   useEffect(() => {
-    if (options.logo && options.ecc !== "H") {
-      // Auto-recommend high EC when a logo is used.
+    if (effectiveOptions.logo && effectiveOptions.ecc !== "H") {
       setOptions((prev) => ({ ...prev, ecc: "H" }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.logo]);
+  }, [effectiveOptions.logo]);
 
   const saveHistory = async () => {
-    await addHistory({ type, label, content, options });
+    if (!requestFeature("history")) return;
+    await addHistory({ type, label, content, options: effectiveOptions });
     notify("Saved to history");
   };
 
   const saveAsTemplate = () => {
+    if (!requestFeature("templates")) return;
     const name = window.prompt("Name this template:", `${TYPE_META[type].label} preset`);
     if (!name) return;
-    saveTemplate(name, options);
+    saveTemplate(name, effectiveOptions);
     notify("Template saved");
+  };
+
+  const selectStyle = (s: QrOptions["style"]) => {
+    if (s === "square") {
+      setOpt("style", "square");
+      return;
+    }
+    if (!requestFeature("style-advanced")) return;
+    setOpt("style", s);
   };
 
   return (
@@ -116,17 +163,25 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">QR type</p>
           <div className="flex flex-wrap gap-2">
-            {QR_TYPES.map((t) => (
-              <Pill key={t} active={t === type} onClick={() => onChangeType(t)}>
-                <span className="mr-1">{TYPE_META[t].icon}</span>
-                {TYPE_META[t].label}
-              </Pill>
-            ))}
+            {QR_TYPES.map((t) => {
+              const f = qrTypeFeature(t);
+              const lockedNow = !hasFeature(plan, f);
+              return (
+                <Pill key={t} active={t === type} onClick={() => selectType(t)}>
+                  <span className="mr-1">{TYPE_META[t].icon}</span>
+                  {TYPE_META[t].label}
+                  {lockedNow && <span className="ml-1 text-[10px]">🔒</span>}
+                </Pill>
+              );
+            })}
           </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-slate-900">{schema.title}</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">{schema.title}</h2>
+            {!premium && <PremiumBadge />}
+          </div>
           <FieldGroup type={type} values={values} onChange={setValue} />
           <div className="mt-4 rounded-lg bg-slate-50 p-3">
             <p className="text-xs font-medium text-slate-500">Encoded content</p>
@@ -139,17 +194,24 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
           <h2 className="mb-4 text-lg font-semibold text-slate-900">Customization</h2>
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-slate-700">Size</span>
+              <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-700">
+                Size
+                {!premium && (
+                  <span className="text-[10px] font-semibold uppercase text-slate-400">
+                    up to {FREE_MAX_SIZE}px · <PremiumLink onClick={() => requestFeature("export-highres")}>high-res 🔒</PremiumLink>
+                  </span>
+                )}
+              </span>
               <input
                 type="range"
                 min={256}
-                max={2048}
+                max={maxSize}
                 step={128}
-                value={options.size}
+                value={Math.min(options.size, maxSize)}
                 onChange={(e) => setOpt("size", Number(e.target.value))}
                 className="w-full"
               />
-              <span className="text-xs text-slate-500">{options.size} px</span>
+              <span className="text-xs text-slate-500">{Math.min(options.size, maxSize)} px</span>
             </label>
 
             <div>
@@ -178,13 +240,24 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
             </label>
 
             <div>
-              <span className="mb-1 block text-sm font-medium text-slate-700">Style</span>
+              <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-700">
+                Style
+                {!premium && <PremiumLink onClick={() => requestFeature("style-advanced")} label="more styles" />}
+              </span>
               <div className="flex flex-wrap gap-2">
-                {(Object.keys(STYLE_LABELS) as QrOptions["style"][]).map((s) => (
-                  <Pill key={s} active={options.style === s} onClick={() => setOpt("style", s)}>
+                {AVAILABLE_STYLES(premium).map((s) => (
+                  <Pill key={s} active={effectiveOptions.style === s} onClick={() => selectStyle(s)}>
                     {STYLE_LABELS[s]}
                   </Pill>
                 ))}
+                {!premium && (
+                  <span
+                    onClick={() => requestFeature("style-advanced")}
+                    className="cursor-pointer rounded-full px-3 py-1.5 text-sm font-medium text-slate-400 ring-1 ring-dashed ring-slate-300 hover:bg-slate-50"
+                  >
+                    Rounded · Dots · Classy 🔒
+                  </span>
+                )}
               </div>
             </div>
 
@@ -217,13 +290,31 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
 
           {/* Logo */}
           <div className="mt-5 border-t border-slate-100 pt-4">
-            <span className="mb-2 block text-sm font-medium text-slate-700">Logo</span>
+            <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+              Logo {!premium && <PremiumBadge />}
+            </span>
             <div className="flex items-center gap-3">
-              <label className="cursor-pointer rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">
+              <label
+                onClick={(e) => {
+                  if (!premium) {
+                    e.preventDefault();
+                    requestFeature("logo");
+                  }
+                }}
+                className={`cursor-pointer rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  premium ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "bg-slate-100 text-slate-400"
+                }`}
+              >
                 Upload image
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => onLogo(e.target.files?.[0])} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={!premium}
+                  onChange={(e) => onLogo(e.target.files?.[0])}
+                />
               </label>
-              {options.logo && (
+              {effectiveOptions.logo && (
                 <>
                   <button
                     type="button"
@@ -232,24 +323,26 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
                   >
                     Remove
                   </button>
-                  <img src={options.logo} alt="logo preview" className="h-9 w-9 rounded object-contain ring-1 ring-slate-200" />
+                  <img src={effectiveOptions.logo} alt="logo preview" className="h-9 w-9 rounded object-contain ring-1 ring-slate-200" />
                 </>
               )}
             </div>
-            <label className="mt-3 block">
-              <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-700">
-                Logo size <span className="text-xs text-slate-500">{Math.round(options.logoScale * 100)}%</span>
-              </span>
-              <input
-                type="range"
-                min={0.08}
-                max={0.35}
-                step={0.01}
-                value={options.logoScale}
-                onChange={(e) => setOpt("logoScale", Number(e.target.value))}
-                className="w-full"
-              />
-            </label>
+            {premium && effectiveOptions.logo && (
+              <label className="mt-3 block">
+                <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-700">
+                  Logo size <span className="text-xs text-slate-500">{Math.round(options.logoScale * 100)}%</span>
+                </span>
+                <input
+                  type="range"
+                  min={0.08}
+                  max={0.35}
+                  step={0.01}
+                  value={options.logoScale}
+                  onChange={(e) => setOpt("logoScale", Number(e.target.value))}
+                  className="w-full"
+                />
+              </label>
+            )}
           </div>
         </div>
       </div>
@@ -267,8 +360,8 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
           <div className="qr-checkerboard mx-auto flex max-w-[360px] items-center justify-center rounded-xl border border-slate-200 p-3">
             <canvas
               ref={canvasRef}
-              width={options.size}
-              height={options.size}
+              width={effectiveOptions.size}
+              height={effectiveOptions.size}
               className="h-auto w-full rounded-md shadow-sm"
               style={{ imageRendering: "auto" }}
             />
@@ -281,34 +374,68 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
             <button onClick={() => doExport("jpg")} className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-900">
               JPG
             </button>
-            <button onClick={() => doExport("svg")} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700">
-              SVG
+            <button
+              onClick={() => doExport("svg")}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            >
+              SVG {!premium && "🔒"}
             </button>
-            <button onClick={() => doExport("pdf")} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-700">
-              PDF
+            <button
+              onClick={() => doExport("pdf")}
+              className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+            >
+              PDF {!premium && "🔒"}
             </button>
           </div>
+          {!premium && (
+            <p className="mt-2 text-center text-xs text-slate-400">
+              SVG, PDF and high-res (over {FREE_MAX_SIZE}px) are Premium.
+            </p>
+          )}
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               onClick={saveHistory}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                premium ? "border-slate-300 text-slate-700 hover:bg-slate-50" : "border-slate-200 text-slate-400"
+              }`}
             >
-              💾 Save to history
+              💾 History {!premium && "🔒"}
             </button>
             <button
               onClick={saveAsTemplate}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                premium ? "border-slate-300 text-slate-700 hover:bg-slate-50" : "border-slate-200 text-slate-400"
+              }`}
             >
-              🎨 Save template
+              🎨 Template {!premium && "🔒"}
             </button>
           </div>
+
+          {!premium && (
+            <button
+              onClick={() => requestFeature("export-svg")}
+              className="mt-3 w-full rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:from-indigo-700 hover:to-fuchsia-700"
+            >
+              Upgrade — unlock all features
+            </button>
+          )}
 
           <p className="mt-3 text-center text-xs text-slate-400">
             Codes are generated locally — nothing you scan or create is uploaded.
           </p>
         </div>
       </div>
+
+      {locked && (
+        <UpgradeModal
+          open={true}
+          feature={locked}
+          onClose={closeModal}
+          title={FEATURES[locked].label}
+          message={FEATURES[locked].pitch}
+        />
+      )}
 
       {toast && (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
@@ -319,10 +446,24 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
   );
 }
 
+/** Inline premium upgrade link. */
+function PremiumLink({ label, onClick, children }: { label?: string; onClick: () => void; children?: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[10px] font-semibold uppercase tracking-wide text-amber-600 hover:underline"
+    >
+      {children ?? label ?? "Premium"} 🔒
+    </button>
+  );
+}
+
+// Pill does not accept a `disabled` prop; the click guard lives in selectType().
+
 function colorToHex(color: string): string {
   const c = color.trim();
   if (/^#[0-9a-fA-F]{6}$/.test(c) || /^#[0-9a-fA-F]{3}$/.test(c)) return c;
-  // Transparent/theme colors fall back to safe defaults for the picker.
   return "#000000";
 }
 
