@@ -8,6 +8,7 @@ import userGuide from "../../../docs/user-guide.md?raw";
 import devGuide from "../../../docs/developer-guide.md?raw";
 import deployment from "../../../docs/deployment.md?raw";
 import license from "../../../docs/LICENSE-commercial.md?raw";
+import pricing from "../../../PRICING.md?raw";
 
 const DOCS: Record<string, { title: string; body: string }> = {
   "": { title: "Documentation", body: readme },
@@ -15,11 +16,13 @@ const DOCS: Record<string, { title: string; body: string }> = {
   "developer-guide": { title: "Developer Guide", body: devGuide },
   deployment: { title: "Deployment Guide", body: deployment },
   license: { title: "Commercial License", body: license },
+  pricing: { title: "Pricing", body: pricing },
 };
 
 const DOC_LINKS = [
   { to: "/docs/user-guide", label: "User Guide" },
   { to: "/docs/developer-guide", label: "Developer Guide" },
+  { to: "/docs/pricing", label: "Pricing" },
   { to: "/docs/deployment", label: "Deployment Guide" },
   { to: "/docs/license", label: "Commercial License" },
 ];

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { usePlan, setPlan, FEATURES, hasFeature } from "~/app/entitlements";
 import type { FeatureId } from "~/app/entitlements";
-import { PLAN_CONFIG, formatPrice } from "~/app/entitlements/config";
+import { PLAN_CONFIG, formatPrice, previewVisible } from "~/app/entitlements/config";
 import { useSeo } from "~/app/hooks";
 
 const trackFeatures: FeatureId[] = [
@@ -100,15 +100,18 @@ export function PricingPage() {
         </div>
       </section>
 
-      {/* Preview premium toggle (developer/demo affordance, NOT a purchase) */}
-      {PLAN_CONFIG.previewPremiumEnabled && (
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
+      {/* Preview premium toggle (DEVELOPMENT / TEST MODE only — never a purchase) */}
+      {previewVisible() && (
+        <section className="mt-8 rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="font-semibold text-slate-900">Preview Premium (demo mode)</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Flip this switch to unlock every feature locally for evaluation. This is not a
-                purchase or a license — it only changes local state for testing.
+              <p className="font-semibold text-slate-900">
+                ⚠️ Development / Test Mode — Preview Premium
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Flip this switch to unlock every feature locally for evaluation. This is{" "}
+                <strong>not a purchase</strong> and not a license — no payment is processed and it
+                only changes state on this device. Hidden in a production release.
               </p>
             </div>
             <button
@@ -123,6 +126,12 @@ export function PricingPage() {
               {plan === "PREMIUM" ? "Premium active (click to reset to Free)" : "Activate Premium preview"}
             </button>
           </div>
+          {plan === "PREMIUM" && (
+            <p className="mt-3 text-xs text-slate-500">
+              You are in Premium test mode. Everything is unlocked on this device for evaluation.
+              This does not grant a license and no payment has been taken.
+            </p>
+          )}
         </section>
       )}
 

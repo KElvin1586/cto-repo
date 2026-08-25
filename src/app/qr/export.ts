@@ -1,6 +1,8 @@
 // Export helpers: PNG, JPG, SVG and PDF download. All run entirely in the browser.
 
-import { jsPDF } from "jspdf";
+// NOTE: jsPDF (and its html2canvas dependency) is loaded lazily via dynamic
+// import() so the ~400 KB PDF engine is only fetched when a PDF export is
+// actually requested — keeping the initial load small for everyone else.
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -43,7 +45,8 @@ export function exportSvg(svgString: string, filename: string) {
   );
 }
 
-export function exportPdf(canvas: HTMLCanvasElement, filename: string) {
+export async function exportPdf(canvas: HTMLCanvasElement, filename: string) {
+  const { jsPDF } = await import("jspdf");
   const dataUrl = canvas.toDataURL("image/png");
   const pdf = new jsPDF({
     orientation: "portrait",

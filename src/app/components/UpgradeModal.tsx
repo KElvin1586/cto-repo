@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { usePlan } from "~/app/entitlements";
 import { FEATURES } from "~/app/entitlements";
 import type { FeatureId } from "~/app/entitlements";
-import { PLAN_CONFIG, formatPrice } from "~/app/entitlements/config";
+import { PLAN_CONFIG, formatPrice, previewVisible } from "~/app/entitlements/config";
 import { Link } from "react-router-dom";
 
 export interface UpgradeModalOptions {
@@ -114,11 +114,20 @@ export function UpgradeModal({ open, feature, onClose, title, message }: Props) 
             </a>
           ) : (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-800">
-              Premium checkout isn't connected yet — you can preview it from the{" "}
-              <Link to="/pricing" onClick={onClose} className="font-semibold underline">
-                Pricing page
-              </Link>
-              .
+              {previewVisible() ? (
+                <>
+                  Premium checkout isn't connected yet — you can preview it from the{" "}
+                  <Link to="/pricing" onClick={onClose} className="font-semibold underline">
+                    Development / Test Mode on the Pricing page
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>
+                  Premium checkout isn't connected yet in this build — no payment is taken. Set up a
+                  real checkout URL in the configuration to enable purchasing.
+                </>
+              )}
             </div>
           )}
           <Link

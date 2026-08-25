@@ -108,7 +108,7 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
   };
 
   const doExport = useCallback(
-    (format: "png" | "jpg" | "svg" | "pdf") => {
+    async (format: "png" | "jpg" | "svg" | "pdf") => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       if (format === "svg" && !requestFeature("export-svg")) return;
@@ -119,7 +119,7 @@ export function Generator({ type, onChangeType }: { type: QrType; onChangeType: 
       else if (format === "svg") {
         const matrix = buildMatrix(content || " ", effectiveOptions.ecc, effectiveOptions.margin);
         exportSvg(renderToSvg(matrix, effectiveOptions), safe);
-      } else exportPdf(canvas, safe);
+      } else await exportPdf(canvas, safe);
       notify(`Downloaded ${format.toUpperCase()}`);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

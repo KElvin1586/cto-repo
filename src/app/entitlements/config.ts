@@ -44,10 +44,55 @@ export const PLAN_CONFIG: PlanConfig = {
     FREE: { label: "Free", price: 0, currency: "USD" },
     PREMIUM: { label: "Premium", price: 9.99, currency: "USD" },
   },
-  // Connect your real checkout / license provider here.
+  // Connect your real checkout / license provider (e.g. a Stripe checkout URL or
+  // license server) here. When empty, the app never shows a fake payment button
+  // and instead explains that purchasing isn't wired up yet.
   upgradeUrl: "",
+  /** See `preview` below. */
   previewPremiumEnabled: true,
 };
+
+// ---------------------------------------------------------------------------
+// Commercial integration points (kept for easy wiring to a real payment/entitlement
+// provider). These are just aliases into PLAN_CONFIG — change the single source of
+// truth above and payouts / the Upgrade button follow automatically.
+// ---------------------------------------------------------------------------
+
+/** Where the "Upgrade to Premium" button sends users. Empty = no external checkout. */
+export const UPGRADE_URL: string = PLAN_CONFIG.upgradeUrl;
+/** The monthly Premium price, for display and future checkout. */
+export const PREMIUM_PRICE: number = PLAN_CONFIG.plans.PREMIUM.price;
+/** ISO currency code for the Premium price. */
+export const PREMIUM_CURRENCY: Currency = PLAN_CONFIG.plans.PREMIUM.currency;
+
+// ---------------------------------------------------------------------------
+// Development / Test mode (NOT a purchase, NOT a license).
+//
+// previewPremiumEnabled grants premium locally so you can evaluate and test every
+// feature without paying. It only flips local state — it never claims a payment
+// occurred and never stores credentials.
+//
+// Production safety: the "Preview Premium" demo toggle and its entry points are
+// hidden in a production build UNLESS previewPremiumEnabled is explicitly set to
+// true. Set it to false before release once a real entitlement provider is wired up.
+// ---------------------------------------------------------------------------
+
+function isDevBuild(): boolean {
+  try {
+    return import.meta.env?.DEV === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the in-app "Preview Premium (development / test mode)" UI should render.
+ * Hidden in production builds by default (see previewPremiumEnabled) to keep test
+ * affordances out of a live release. A real purchase path never depends on this.
+ */
+export function previewVisible(): boolean {
+  return PLAN_CONFIG.previewPremiumEnabled || isDevBuild();
+}
 
 /** Format a price for display, e.g. "$9.99". */
 export function formatPrice(p: PricePlan): string {
